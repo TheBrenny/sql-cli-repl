@@ -1,0 +1,33 @@
+{
+  "name": "mysql-cli",
+  "version": "1.0.0",
+  "description": "A small and simple MySQL CLI to connect to MySQL Database instances.",
+  "main": "cli.js",
+  "bin": "cli.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thebrenny/mysql-cli.git"
+  },
+  "keywords": [
+    "mysql",
+    "db",
+    "database",
+    "cli",
+    "sql",
+    "query"
+  ],
+  "author": "TheBrenny <iam+dev@justbrenny.me>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/thebrenny/mysql-cli/issues"
+  },
+  "homepage": "https://github.com/thebrenny/mysql-cli#readme",
+  "dependencies": {
+    "big-kahuna": "^1.3.4",
+    "dotenv": "^9.0.0",
+    "mysql2": "^2.2.5"
+  }
+}
