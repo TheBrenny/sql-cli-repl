@@ -57,3 +57,7 @@ Clear the screen
 ```plain
 user@localhost> !clear
 ```
+
+## License
+
+MIT
