@@ -1,9 +1,11 @@
 {
-  "name": "mysqlcli",
+  "name": "mysql-cli",
   "version": "1.0.0",
   "description": "A small and simple MySQL CLI to connect to MySQL Database instances.",
   "main": "cli.js",
-  "bin": "cli.js",
+  "bin": {
+    "mysql-cli": "cli.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

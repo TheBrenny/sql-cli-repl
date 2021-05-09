@@ -57,6 +57,7 @@ async function processArgs() {
         await (db = mysql.createConnection(config.uri || config));
     } catch (err) {
         logerr(err);
+        db = null;
     }
 }
 
