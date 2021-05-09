@@ -122,10 +122,10 @@ function handleAppCommand(cmd) {
 }
 
 function handleSQLResponse(records) {
+    if(records.length == 0) return "Returned 0 rows.";
     let keys = Object.keys(records[0]);
     let data = new Array(keys.length).fill(new Array(1 + records.length));
     let lengths = new Array(keys.length);
-
 
     const clampString = (clampLength, maxLength, str) => {
         clampLength = Math.min(clampLength, maxLength);
@@ -137,7 +137,6 @@ function handleSQLResponse(records) {
         return str;
     };
     const buildRecordRow = (r, a, c) => a.concat(c[r]);
-
 
     for (let k = 0; k < keys.length; k++) {
         data[k][0] = keys[k];
