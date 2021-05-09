@@ -1,5 +1,5 @@
 {
-  "name": "mysql-cli",
+  "name": "mysqlcli",
   "version": "1.0.0",
   "description": "A small and simple MySQL CLI to connect to MySQL Database instances.",
   "main": "cli.js",
@@ -27,6 +27,7 @@
   "homepage": "https://github.com/thebrenny/mysql-cli#readme",
   "dependencies": {
     "big-kahuna": "^1.3.4",
+    "chalk": "^4.1.1",
     "dotenv": "^9.0.0",
     "mysql2": "^2.2.5"
   }

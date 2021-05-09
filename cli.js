@@ -2,9 +2,11 @@ require("dotenv").config();
 const rl = require("readline");
 const vm = require("vm"); // TODO: Create a VM and update the context to have latest responses
 const mysql = require("mysql2/promise");
+const chalk = require("chalk");
+const url = require("url");
 let bossman = require("big-kahuna").dashCare(true);
-let db = Promise.resolve(null);
-
+let db = null;
+let repl = null;
 let config = {
     host: "localhost",
     port: 3306,
@@ -31,52 +33,110 @@ function logerr(err) {
 
 
 async function processArgs() {
-    config.uri = bossman.answer("-uri") || null;
-    config.host = bossman.answer("-host") || config.host;
+    config.uri = bossman.cabinet(0) || null;
+    config.host = bossman.answer("-host", "-h") || config.host;
     config.port = bossman.answer("-port") || config.port;
-    config.user = bossman.answer("-user") || config.user;
-    config.password = bossman.answer("-pass", "-password") || config.password;
+    config.user = bossman.answer("-user", "-u") || config.user;
+    config.password = bossman.answer("-pass", "-p") || config.password;
     config.database = bossman.answer("-database", "-db") || config.database;
 
     try {
+        if (config.uri) {
+            let obj = url.parse(config.uri);
+            if (!obj.protocol.startsWith("mysql")) throw {
+                message: "Bad MySQL URI. Protocol must be 'mysql://'.",
+                code: "BADURI",
+                errno: 11
+            };
+            config.host = obj.hostname;
+            config.port = obj.port;
+            [config.user, config.password] = obj.auth.split(":");
+            config.database = obj.pathname.substr(1);
+        }
+
         await (db = mysql.createConnection(config.uri || config));
     } catch (err) {
-        // console.error(err);
         logerr(err);
-        return false;
     }
-    return true;
 }
 
 async function handleCommand(data) {
     if (data.startsWith("#")) {
         // do it in a different repl
-        logn("JS VM coming soon...");
+        handleJsInstruction(data.substring(1));
     } else if (data.startsWith("!")) {
         // set it with a setting
-        logn("CLI settings coming soon...");
+        handleAppCommand(data.substring(1));
     } else {
         // execute on the server
-        return (await db).query(data);
+        if (db === null) throw {
+            message: "DB not connected.",
+            code: "DBDISCON",
+            errno: 12
+        };
+        let r = await (await db).query(data);
+        return handleSQLResponse(r[0]);
     }
     return null;
 }
 
-function processSQLResponse(records) {
+function handleJsInstruction(inst) {
+    logn(chalk.italic.blue("JS VM coming soon..."));
+}
+
+function handleAppCommand(cmd) {
+    let ret = {};
+
+    cmd = cmd.split(" ");
+    switch (cmd[0].toLowerCase()) {
+        case "prompt":
+            if (cmd.length == 1 || cmd[1].trim() == "") setDefaultPrompt();
+            else {
+                setPrompt(
+                    cmd
+                    .slice(1)
+                    .map(c => c.startsWith("$") ? config[c.substr(1)] : c)
+                    .join(" ")
+                );
+            }
+            ret = "Prompt updated!";
+            break;
+        case "clear":
+            process.stdout.cursorTo(0, 0);
+            process.stdout.clearScreenDown();
+            break;
+        case "exit":
+        case "quit":
+            process.emit("SIGINT");
+            break;
+        default:
+            ret.err = {
+                message: "Unknown app command: " + cmd,
+                code: "NULLAPPCMD",
+                errno: 10
+            };
+    }
+    if (ret.err != null) throw ret.err;
+    else return ret;
+}
+
+function handleSQLResponse(records) {
     let keys = Object.keys(records[0]);
     let data = new Array(keys.length).fill(new Array(1 + records.length));
     let lengths = new Array(keys.length);
+
 
     const clampString = (clampLength, maxLength, str) => {
         clampLength = Math.min(clampLength, maxLength);
         str = str.padStart(clampLength, " ");
 
-        if (maxLength > clampLength) str = str.substring(0, clampLength - 4) + " ...";
+        if (str.length > clampLength) str = str.substring(0, clampLength - 4) + " ...";
         else str = str.substring(0, clampLength);
 
         return str;
     };
-    const buildRecordRow = (a, c) => a.concat(c[r]);
+    const buildRecordRow = (r, a, c) => a.concat(c[r]);
+
 
     for (let k = 0; k < keys.length; k++) {
         data[k][0] = keys[k];
@@ -99,28 +159,45 @@ function processSQLResponse(records) {
 
     let lines = [];
     for (let r = 0; r < records.length + 1; r++) {
-        let line = "| " + data.reduce(buildRecordRow, []).join(" | ") + " |";
+        let line = "| " + data.reduce(buildRecordRow.bind(null, r), []).join(" | ") + " |";
         lines.push(line);
     }
 
     lines.splice(1, 0, lines[0].replace(/[^|]/g, "-"));
-    lines.push(lines[1]);
+    lines.splice(0, 0, lines[0].replace(/[^|]/g, "-"));
+    lines.push(lines[0]);
     return lines.join("\n");
 }
 
-function writePrompt() {
-    process.stdout.write("> ");
-}
+// function writePrompt() {
+//     process.stdout.write(config.prompt + "> ");
+// }
 
 function isValidCommand(c) {
-    return c.endsWith(";") || c.startsWith("!") || c.startsWith("#");
+    return c.endsWith(";") || // SQL command
+        c.startsWith("!") || // internal command
+        c.startsWith("#"); // js command
+}
+
+async function setDefaultPrompt() {
+    setPrompt(db === null ? chalk.bold.red(`disconnected`) : `${chalk.bold.green(config.user)}@${config.host}`);
+}
+
+function setPrompt(p) {
+    repl.setPrompt(`${p}> `);
 }
 
 function enterRepl() {
-    let repl = rl.createInterface(process.stdin, process.stdout);
+    repl = rl.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        prompt: "mysql> "
+    });
+    setDefaultPrompt();
+    repl.prompt();
 
     let d = "";
-    writePrompt();
+    let p = null;
 
     repl.on("line", (data) => {
         d += data;
@@ -128,33 +205,57 @@ function enterRepl() {
         if (isValidCommand(d)) {
             Promise.resolve(d)
                 .then((ret) => {
+                    if (p !== null) repl.setPrompt(p);
+                    p = null;
                     repl.pause();
                     return ret;
                 })
                 .then((ret) => handleCommand(ret))
                 .then((ret) => {
-                    if (ret !== null) logn(processSQLResponse(ret[0]));
+                    if (ret !== null) logn(ret);
                     return 0;
                 })
                 .catch((err) => (logerr(err), err.errno))
                 .finally((retcode) => {
                     lastRetCode = retcode;
-                    writePrompt();
+                    repl.prompt();
                     repl.resume();
                 });
             d = "";
+        } else if (d != "") {
+            // console.log(repl);
+            d += " ";
+            if (p === null) p = repl._prompt;
+            repl.setPrompt("... ");
+            repl.prompt();
+        } else {
+            repl.prompt();
         }
     }).on("SIGINT", () => process.emit("SIGINT"));
     process.on("SIGINT", () => (logn("\nBye!"), process.exit(lastRetCode)));
 }
 
 function printHelp() {
-    
+    let help = [
+        "Connects to a MySQL server and allows the user to enter SQL and JS commands.",
+        "",
+        "mysqlcli {MYSQL_URI | OPTIONS}",
+        "    MYSQL_URI must be a properly formatted MySQL server URI with protocol, auth, host, port, and pathnames set.",
+        "    OPTIONS:",
+        "      -help ........... Prints this help message",
+        "      -u, -user ....... Sets the user to connect as",
+        "      -p, -pass ....... Sets the password to use when connecting",
+        "      -h, -host ....... Sets the host to connect to",
+        "      -port ........... Sets the port to use",
+        "      -db, -database .. Sets the database to connect to",
+        "",
+        "Example:",
+        "    mysqlcli mysql://user:pass@localhost:3306/myDB"
+    ];
+    console.log(help.join("\n"));
 }
 
 if (require.main === module) {
-    if (bossman.length == 0 || bossman.has("help", "h")) printHelp();
-    else {
-        processArgs().then((success) => success ? enterRepl() : printHelp());
-    }
+    if (bossman.has("-help")) printHelp();
+    else processArgs().then(enterRepl).catch(logerr);
 } else module.exports = {};
