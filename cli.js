@@ -1,18 +1,49 @@
 require("dotenv").config();
 const rl = require("readline");
 const vm = require("vm"); // TODO: Create a VM and update the context to have latest responses
+const $ = [];
+const $s = [];
+const vmContext = vm.createContext();
+Object.defineProperties(vmContext, {
+    $: {
+        get: () => Array.from($)
+    },
+    $0: {
+        get: () => Object.values(Object.assign({}, Array.from($)[0]))
+    },
+    $s: {
+        get: () => Array.from($s)
+    },
+    $s0: {
+        get: () => Object.values(Object.assign({}, Array.from($s)[0]))
+    },
+});
 const mysql = require("mysql2/promise");
 const chalk = require("chalk");
 const url = require("url");
+const rawModes = {
+    "all": 0b11,
+    "schema": 0b10,
+    "values": 0b01,
+};
+
 let bossman = require("big-kahuna").dashCare(true);
 let db = null;
 let repl = null;
+
 let config = {
     host: "localhost",
     port: 3306,
     user: "",
     password: "",
     database: "",
+};
+let settings = {
+    prompt: "mysql",
+    raw: {
+        active: false,
+        mode: rawModes.values
+    },
 };
 
 let lastRetCode = 0;
@@ -27,7 +58,15 @@ function logn(obj) {
 }
 
 function logerr(err) {
-    process.stderr.write(typeof err === "string" ? err : JSON.stringify(err, null, 2));
+    if (err instanceof Error) {
+        err = {
+            name: err.name,
+            errno: err.code || -1,
+            message: err.message,
+            stack: err.stack || "no stack"
+        };
+    }
+    process.stderr.write(typeof err === "string" ? err : JSON.stringify(err, null, 2).replace(/\\n/g, "\n").replace(/\\\\/g, "\\"));
     process.stderr.write("\n");
 }
 
@@ -64,10 +103,10 @@ async function processArgs() {
 async function handleCommand(data) {
     if (data.startsWith("#")) {
         // do it in a different repl
-        handleJsInstruction(data.substring(1));
+        return handleJsInstruction(data.substring(1));
     } else if (data.startsWith("!")) {
         // set it with a setting
-        handleAppCommand(data.substring(1));
+        return handleAppCommand(data.substring(1));
     } else {
         // execute on the server
         if (db === null) throw {
@@ -75,32 +114,84 @@ async function handleCommand(data) {
             code: "DBDISCON",
             errno: 12
         };
+        let suppress = data.endsWith("sh");
+        if (suppress) data = data.substring(0, data.length - 2);
         let r = await (await db).query(data);
-        return handleSQLResponse(r[0]);
+        $.splice(0, 0, r[0]);
+        $s.splice(0, 0, r[1]);
+        if (settings.raw.active) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
+        else if (!suppress) return handleSQLResponse(r[0]);
+        else return null;
     }
-    return null;
 }
 
 function handleJsInstruction(inst) {
-    logn(chalk.italic.blue("JS VM coming soon..."));
+    // logn(chalk.italic.blue("JS VM coming soon..."));
+    try {
+        let ret = vm.runInContext(inst, vmContext, {
+            displayErrors: true,
+            breakOnSigint: true,
+        });
+        return ret;
+    } catch (err) {
+        logerr(err);
+    }
 }
 
 function handleAppCommand(cmd) {
-    let ret = {};
+    let ret = null;
+    let err = null;
 
     cmd = cmd.split(" ");
     switch (cmd[0].toLowerCase()) {
         case "prompt":
-            if (cmd.length == 1 || cmd[1].trim() == "") setDefaultPrompt();
+            if (cmd.length == 1 || cmd[1].trim() == "") ret = `Current Prompt: ${settings.prompt}`;
             else {
-                setPrompt(
-                    cmd
-                    .slice(1)
-                    .map(c => c.startsWith("$") ? config[c.substr(1)] : c)
-                    .join(" ")
-                );
+                if (cmd[1].toLowerCase() == "$reset") setDefaultPrompt();
+                else setPrompt(cmd.slice(1).map(c => c.startsWith("$") ? config[c.substr(1)] : c).join(" "));
+                ret = "Prompt updated!";
             }
-            ret = "Prompt updated!";
+            break;
+        case "set":
+            let setting = cmd[1].toLowerCase();
+            let subsetting = (cmd[2] || "").toLowerCase();
+            switch (setting) {
+                case "raw":
+                    if (cmd.length < 3 || subsetting == "") {
+                        ret = [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.mode}`];
+                        break;
+                    }
+                    switch (subsetting) {
+                        case "active":
+                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw active: ${settings.raw.active ? "on" : "off"}`;
+                            else {
+                                settings.raw.active = cmd[3].trim().toLowerCase() == "true";
+                                ret = `Raw active ${settings.raw.active ? "on" : "off"}`;
+                            }
+                            break;
+                        case "mode":
+                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw mode: ${settings.raw.mode}`;
+                            else {
+                                settings.raw.mode = rawModes[cmd[3].trim().toLowerCase()] || rawModes.values;
+                                ret = `Raw mode ${settings.raw.mode}`;
+                            }
+                            break;
+                        default:
+                            err = {
+                                message: "Unknown raw setting: " + cmd[2],
+                                code: "NULLAPPSET",
+                                errno: 110
+                            };
+                            break;
+                    }
+                    break;
+                default:
+                    err = {
+                        message: "Unknown app setting: " + cmd[1],
+                        code: "NULLAPPSET",
+                        errno: 110
+                    };
+            }
             break;
         case "clear":
             process.stdout.cursorTo(0, 0);
@@ -111,18 +202,19 @@ function handleAppCommand(cmd) {
             process.emit("SIGINT");
             break;
         default:
-            ret.err = {
+            err = {
                 message: "Unknown app command: " + cmd,
                 code: "NULLAPPCMD",
-                errno: 10
+                errno: 100
             };
     }
-    if (ret.err != null) throw ret.err;
-    else return ret;
+    if (!Array.isArray(ret) && ret !== null) ret = [ret];
+    if (err != null) throw err;
+    else return ret === null ? null : ret.map(r => chalk.italic.green("  " + r)).join("\n");
 }
 
 function handleSQLResponse(records) {
-    if(records.length == 0) return "Returned 0 rows.";
+    if (records.length == 0) return "Returned 0 rows.";
     let keys = Object.keys(records[0]);
     let data = new Array(keys.length).fill(new Array(1 + records.length));
     let lengths = new Array(keys.length);
@@ -144,9 +236,10 @@ function handleSQLResponse(records) {
         lengths[k].push(keys[k].length);
         for (let r = 0; r < records.length; r++) {
             let rec = records[r][keys[k]];
+            if (rec === null || rec === undefined) rec = "null";
             if (typeof rec === "object") {
                 rec = JSON.parse(JSON.stringify(rec));
-                rec = rec.type.substring(0, 3) + JSON.stringify(rec.data);
+                rec = (rec.type || "???????").substring(0, 3) + JSON.stringify(rec.data);
             }
             rec = rec.toString();
 
@@ -169,12 +262,8 @@ function handleSQLResponse(records) {
     return lines.join("\n");
 }
 
-// function writePrompt() {
-//     process.stdout.write(config.prompt + "> ");
-// }
-
 function isValidCommand(c) {
-    return c.endsWith(";") || // SQL command
+    return c.endsWith(";") || c.endsWith(";sh") || // SQL command
         c.startsWith("!") || // internal command
         c.startsWith("#"); // js command
 }
@@ -184,6 +273,7 @@ async function setDefaultPrompt() {
 }
 
 function setPrompt(p) {
+    settings.prompt = p;
     repl.setPrompt(`${p}> `);
 }
 
@@ -191,21 +281,22 @@ function enterRepl() {
     repl = rl.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "mysql> "
+        prompt: settings.prompt + "> "
     });
     setDefaultPrompt();
-    repl.prompt();
 
     let d = "";
     let p = null;
 
+    repl.prompt();
     repl.on("line", (data) => {
+        data = data.trim();
         d += data;
 
         if (isValidCommand(d)) {
             Promise.resolve(d)
                 .then((ret) => {
-                    if (p !== null) repl.setPrompt(p);
+                    if (p !== null) setPrompt(p);
                     p = null;
                     repl.pause();
                     return ret;
@@ -215,7 +306,10 @@ function enterRepl() {
                     if (ret !== null) logn(ret);
                     return 0;
                 })
-                .catch((err) => (logerr(err), err.errno))
+                .catch((err) => {
+                    logerr(err);
+                    return err.errno;
+                })
                 .finally((retcode) => {
                     lastRetCode = retcode;
                     repl.prompt();
@@ -223,16 +317,26 @@ function enterRepl() {
                 });
             d = "";
         } else if (d != "") {
-            // console.log(repl);
             d += " ";
-            if (p === null) p = repl._prompt;
+            if (p === null) p = settings.prompt;
             repl.setPrompt("... ");
             repl.prompt();
         } else {
             repl.prompt();
         }
     }).on("SIGINT", () => process.emit("SIGINT"));
-    process.on("SIGINT", () => (logn("\nBye!"), process.exit(lastRetCode)));
+    process.on("SIGINT", () => {
+        if (d === "") {
+            logn("\nBye!");
+            process.exit(lastRetCode);
+        } else {
+            d = "";
+            if (p !== null) setPrompt(p);
+            p = null;
+            log("\n");
+            repl.emit("line", "");
+        }
+    });
 }
 
 function printHelp() {
