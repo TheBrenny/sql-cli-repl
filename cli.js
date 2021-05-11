@@ -42,8 +42,10 @@ let settings = {
     prompt: "mysql",
     raw: {
         active: false,
-        mode: rawModes.values
+        mode: rawModes.values,
+        getMode: (v) => Object.keys(rawModes).find(e => rawModes[e] == (v || settings.raw.mode))
     },
+    nestTables: null
 };
 
 let lastRetCode = 0;
@@ -114,13 +116,19 @@ async function handleCommand(data) {
             code: "DBDISCON",
             errno: 12
         };
+
         let suppress = data.endsWith("sh");
         if (suppress) data = data.substring(0, data.length - 2);
-        let r = await (await db).query(data);
+
+        let r = await (await db).query({
+            sql: data,
+            nestTables: settings.nestTables
+        });
         $.splice(0, 0, r[0]);
         $s.splice(0, 0, r[1]);
-        if (settings.raw.active) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
-        else if (!suppress) return handleSQLResponse(r[0]);
+
+        if (settings.raw.active && !suppress) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
+        else if (!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0]);
         else return null;
     }
 }
@@ -158,22 +166,22 @@ function handleAppCommand(cmd) {
             switch (setting) {
                 case "raw":
                     if (cmd.length < 3 || subsetting == "") {
-                        ret = [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.mode}`];
+                        ret = [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.getMode()}`];
                         break;
                     }
                     switch (subsetting) {
                         case "active":
                             if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw active: ${settings.raw.active ? "on" : "off"}`;
                             else {
-                                settings.raw.active = cmd[3].trim().toLowerCase() == "true";
+                                settings.raw.active = ["true", "on"].includes(cmd[3].trim().toLowerCase());
                                 ret = `Raw active ${settings.raw.active ? "on" : "off"}`;
                             }
                             break;
                         case "mode":
-                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw mode: ${settings.raw.mode}`;
+                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw mode: ${settings.raw.getMode()}`;
                             else {
                                 settings.raw.mode = rawModes[cmd[3].trim().toLowerCase()] || rawModes.values;
-                                ret = `Raw mode ${settings.raw.mode}`;
+                                ret = `Raw mode ${settings.raw.getMode()}`;
                             }
                             break;
                         default:
@@ -183,6 +191,14 @@ function handleAppCommand(cmd) {
                                 errno: 110
                             };
                             break;
+                    }
+                    break;
+                case "nesttables":
+                    if (cmd.length < 3 || subsetting == "") ret = `Nest tables: ${settings.nestTables ? "on" : "off"}`;
+                    else {
+                        if (subsetting == "$reset") settings.nestTables = null;
+                        else settings.nestTables = cmd[2];
+                        ret = `Nest tables ${settings.nestTables || "off"}`;
                     }
                     break;
                 default:
@@ -214,7 +230,7 @@ function handleAppCommand(cmd) {
 }
 
 function handleSQLResponse(records) {
-    if (records.length == 0) return "Returned 0 rows.";
+    if (records.length == 0) return "Returned " + chalk.yellow("0") + " rows.";
     let keys = Object.keys(records[0]);
     let data = new Array(keys.length).fill(new Array(1 + records.length));
     let lengths = new Array(keys.length);
@@ -237,6 +253,7 @@ function handleSQLResponse(records) {
         for (let r = 0; r < records.length; r++) {
             let rec = records[r][keys[k]];
             if (rec === null || rec === undefined) rec = "null";
+            if (rec instanceof Date) rec = rec.toJSON();
             if (typeof rec === "object") {
                 rec = JSON.parse(JSON.stringify(rec));
                 rec = (rec.type || "???????").substring(0, 3) + JSON.stringify(rec.data);
@@ -260,6 +277,14 @@ function handleSQLResponse(records) {
     lines.splice(0, 0, lines[0].replace(/[^|]/g, "-"));
     lines.push(lines[0]);
     return lines.join("\n");
+}
+
+function handleSQLModify(record) {
+    let id = record.insertId;
+    let rows = record.affectedRows;
+
+    if (id == 0) return "Deleted " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
+    else return "Altered " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
 }
 
 function isValidCommand(c) {
