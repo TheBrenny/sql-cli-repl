@@ -112,7 +112,7 @@ All available commands:
     - More help can be found by calling `!help`
 - ***TO BE ADDED***
 - `/save [opt]` Saves data about the session to the PWD
-  - `/save session` Saves only the commands called
+  - `/save session` Saves only the commands and results called
   - `/save settings` Saves the current settings of the application
   - `/save all` Saves the entire session (commands and settings)
 
