@@ -1,4 +1,42 @@
-require("dotenv").config();
+const args = require('yargs')
+    .scriptName("sqlcli")
+    .showHelpOnFail(true)
+    .command("$0", "Create an SQL CLI that is disconnected to begin with", (y) => {
+        y.options({
+            "username": {
+                alias: ["user", "u"],
+                string: true,
+            },
+            "password": {
+                alias: ["pass", "p"],
+                string: true,
+            },
+            "host": {
+                alias: ["h"],
+                string: true,
+            },
+            "port": {
+                number: true,
+                default: 3306
+            },
+            "database": {
+                alias: ["db"],
+                string: true,
+            },
+            "driver": {
+                string: true,
+                default: "mysql"
+            }
+        });
+    })
+    .command("<uri>", "Connect to a DB using a URI", (y) => {
+        y.positional("uri", {
+            desc: "URI to a DB server to connect to",
+            type: "string",
+            conflicts: ["username", "password", "host", "port", "database"]
+        });
+    });
+
 const rl = require("readline");
 const vm = require("vm"); // TODO: Create a VM and update the context to have latest responses
 const $ = [];
@@ -21,22 +59,22 @@ Object.defineProperties(vmContext, {
 const mysql = require("mysql2/promise");
 const chalk = require("chalk");
 const url = require("url");
+const yargs = require('yargs');
 const rawModes = {
     "all": 0b11,
     "schema": 0b10,
     "values": 0b01,
 };
 
-let bossman = require("big-kahuna").dashCare(true);
 let db = null;
 let repl = null;
 
 let config = {
-    host: "localhost",
-    port: 3306,
-    user: "",
-    password: "",
-    database: "",
+    host: null,
+    port: null,
+    user: null,
+    password: null,
+    database: null,
 };
 let settings = {
     prompt: "mysql",
@@ -72,14 +110,14 @@ function logerr(err) {
     process.stderr.write("\n");
 }
 
-
 async function processArgs() {
-    config.uri = bossman.cabinet(0) || null;
-    config.host = bossman.answer("-host", "-h") || config.host;
-    config.port = bossman.answer("-port") || config.port;
-    config.user = bossman.answer("-user", "-u") || config.user;
-    config.password = bossman.answer("-pass", "-p") || config.password;
-    config.database = bossman.answer("-database", "-db") || config.database;
+    let args = yargs.argv;
+    config.uri = args._[0] || null;
+    config.host = args.host || config.host;
+    config.port = args.port || config.port;
+    config.user = args.username || config.user;
+    config.password = args.password || config.password;
+    config.database = args.database || config.database;
 
     try {
         if (config.uri) {
@@ -95,7 +133,7 @@ async function processArgs() {
             config.database = obj.pathname.substr(1);
         }
 
-        await (db = mysql.createConnection(config.uri || config));
+        if (config.uri || config.host) await (db = mysql.createConnection(config.uri || config));
     } catch (err) {
         logerr(err);
         db = null;
@@ -103,10 +141,10 @@ async function processArgs() {
 }
 
 async function handleCommand(data) {
-    if (data.startsWith("#")) {
+    if (data.startsWith(">")) {
         // do it in a different repl
         return handleJsInstruction(data.substring(1));
-    } else if (data.startsWith("!")) {
+    } else if (data.startsWith("/")) {
         // set it with a setting
         return handleAppCommand(data.substring(1));
     } else {
@@ -146,87 +184,104 @@ function handleJsInstruction(inst) {
     }
 }
 
+const appCommands = {
+    "_": {
+        "prompt": [],
+    },
+    prompt(...p) {
+        if (p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
+
+        if (p[0].toLowerCase() == "$reset") setDefaultPrompt();
+        else {
+            for (let c in config) p = p.map(v => v.replace(new RegExp("\\$" + c, "gi"), config[c])); //jshint ignore:line
+            setPrompt(p.join(" "));
+        }
+
+        return "Prompt updated!";
+    },
+    set(...v) {
+        let key = v[0];
+        let values = v.slice(1);
+        switch (key) {
+            case "raw":
+                if (values.length == 0) return [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.getMode()}`];
+                switch (values[0]) {
+                    case "active":
+                        if (values.length == 1) return `Raw active: ${settings.raw.active ? "on" : "off"}`;
+
+                        settings.raw.active = ["true", "on"].includes(values[1].trim().toLowerCase());
+                        return `Raw active ${settings.raw.active ? "on" : "off"}`;
+                    case "mode":
+                        if (values.length == 1) return `Raw mode: ${settings.raw.getMode()}`;
+
+                        settings.raw.mode = rawModes[values[1].trim().toLowerCase()] || rawModes.values;
+                        return `Raw mode ${settings.raw.getMode()}`;
+                    default:
+                        ret = {
+                            message: "Unknown raw setting: " + values[0],
+                            code: "NULLAPPSET",
+                            errno: 110
+                        };
+                        return ret;
+                }
+                break;
+            case "nesttables":
+                if (values.length == 0) return `Nest tables: ${settings.nestTables ? "on" : "off"}`;
+
+                if (values == "$reset") settings.nestTables = null;
+                else settings.nestTables = values[0];
+
+                return `Nest tables ${settings.nestTables || "off"}`;
+            default:
+                ret = {
+                    message: "Unknown app setting: " + key,
+                    code: "NULLAPPSET",
+                    errno: 110
+                };
+                return ret;
+        }
+    },
+    clear() {
+        process.stdout.cursorTo(0, 0);
+        process.stdout.clearScreenDown();
+        return null;
+    },
+    help(...c) {},
+    exit() {
+        process.emit("SIGINT");
+    },
+};
+appCommands.help = function (...c) {
+
+};
+
 function handleAppCommand(cmd) {
     let ret = null;
-    let err = null;
 
     cmd = cmd.split(" ");
-    switch (cmd[0].toLowerCase()) {
-        case "prompt":
-            if (cmd.length == 1 || cmd[1].trim() == "") ret = `Current Prompt: ${settings.prompt}`;
-            else {
-                if (cmd[1].toLowerCase() == "$reset") setDefaultPrompt();
-                else setPrompt(cmd.slice(1).map(c => c.startsWith("$") ? config[c.substr(1)] : c).join(" "));
-                ret = "Prompt updated!";
-            }
-            break;
-        case "set":
-            let setting = cmd[1].toLowerCase();
-            let subsetting = (cmd[2] || "").toLowerCase();
-            switch (setting) {
-                case "raw":
-                    if (cmd.length < 3 || subsetting == "") {
-                        ret = [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.getMode()}`];
-                        break;
-                    }
-                    switch (subsetting) {
-                        case "active":
-                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw active: ${settings.raw.active ? "on" : "off"}`;
-                            else {
-                                settings.raw.active = ["true", "on"].includes(cmd[3].trim().toLowerCase());
-                                ret = `Raw active ${settings.raw.active ? "on" : "off"}`;
-                            }
-                            break;
-                        case "mode":
-                            if (cmd.length < 4 || cmd[3].trim() == "") ret = `Raw mode: ${settings.raw.getMode()}`;
-                            else {
-                                settings.raw.mode = rawModes[cmd[3].trim().toLowerCase()] || rawModes.values;
-                                ret = `Raw mode ${settings.raw.getMode()}`;
-                            }
-                            break;
-                        default:
-                            err = {
-                                message: "Unknown raw setting: " + cmd[2],
-                                code: "NULLAPPSET",
-                                errno: 110
-                            };
-                            break;
-                    }
-                    break;
-                case "nesttables":
-                    if (cmd.length < 3 || subsetting == "") ret = `Nest tables: ${settings.nestTables ? "on" : "off"}`;
-                    else {
-                        if (subsetting == "$reset") settings.nestTables = null;
-                        else settings.nestTables = cmd[2];
-                        ret = `Nest tables ${settings.nestTables || "off"}`;
-                    }
-                    break;
-                default:
-                    err = {
-                        message: "Unknown app setting: " + cmd[1],
-                        code: "NULLAPPSET",
-                        errno: 110
-                    };
-            }
-            break;
-        case "clear":
-            process.stdout.cursorTo(0, 0);
-            process.stdout.clearScreenDown();
-            break;
-        case "exit":
-        case "quit":
-            process.emit("SIGINT");
-            break;
-        default:
-            err = {
-                message: "Unknown app command: " + cmd,
-                code: "NULLAPPCMD",
-                errno: 100
-            };
-    }
+    if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = appCommands[cmd[0]](...cmd.slice(1));
+    else appCommands.badCommand();
+
+    // switch (cmd[0].toLowerCase()) {
+    //     case "clear":
+    //         process.stdout.cursorTo(0, 0);
+    //         process.stdout.clearScreenDown();
+    //         break;
+    //     case "help":
+    //         printHelp();
+    //         break;
+    //     default:
+    //         ret = {
+    //             message: "Unknown app command: " + cmd,
+    //             code: "NULLAPPCMD",
+    //             errno: 100
+    //         };
+    // }
+
+    if (ret !== null && ret.errno !== undefined) throw ret;
     if (!Array.isArray(ret) && ret !== null) ret = [ret];
-    if (err != null) throw err;
-    else return ret === null ? null : ret.map(r => chalk.italic.green("  " + r)).join("\n");
+
+    return (ret === null ? null : ret.map(r => chalk.italic.green("  " + r)).join("\n"));
 }
 
 function handleSQLResponse(records) {
@@ -289,8 +344,8 @@ function handleSQLModify(record) {
 
 function isValidCommand(c) {
     return c.endsWith(";") || c.endsWith(";sh") || // SQL command
-        c.startsWith("!") || // internal command
-        c.startsWith("#"); // js command
+        c.startsWith("/") || // internal command
+        c.startsWith(">"); // js command
 }
 
 async function setDefaultPrompt() {
@@ -365,26 +420,10 @@ function enterRepl() {
 }
 
 function printHelp() {
-    let help = [
-        "Connects to a MySQL server and allows the user to enter SQL and JS commands.",
-        "",
-        "mysqlcli {MYSQL_URI | OPTIONS}",
-        "    MYSQL_URI must be a properly formatted MySQL server URI with protocol, auth, host, port, and pathnames set.",
-        "    OPTIONS:",
-        "      -help ........... Prints this help message",
-        "      -u, -user ....... Sets the user to connect as",
-        "      -p, -pass ....... Sets the password to use when connecting",
-        "      -h, -host ....... Sets the host to connect to",
-        "      -port ........... Sets the port to use",
-        "      -db, -database .. Sets the database to connect to",
-        "",
-        "Example:",
-        "    mysqlcli mysql://user:pass@localhost:3306/myDB"
-    ];
-    console.log(help.join("\n"));
+
 }
 
 if (require.main === module) {
-    if (bossman.has("-help")) printHelp();
+    if (yargs.argv.help) yargs.showHelp();
     else processArgs().then(enterRepl).catch(logerr);
 } else module.exports = {};
