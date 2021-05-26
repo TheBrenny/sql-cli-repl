@@ -186,7 +186,33 @@ function handleJsInstruction(inst) {
 
 const appCommands = {
     "_": {
-        "prompt": [],
+        "prompt": [
+            "[prompt]",
+            "Prompt can be any string, and can include $config values or be $reset to reset"
+        ],
+        "set": [
+            "[setting] [values..]",
+            "Gets or sets the setting. Settings:",
+            "raw active           -- Gets the raw active setting",
+            "raw active [on/off]  -- Sets the raw active setting to on or off",
+            "raw mode             -- Gets the raw mode setting. Returns the value name",
+            "raw mode [value]     -- Sets the raw mode setting. Value must be a number",
+            "    1 - Values Only (default)",
+            "    2 - Schema Only",
+            "    3 - Values and Schema",
+            "nesttables           -- Gets the nest tables prefix",
+            "nesttables [prefix]  -- Sets the nest tables prefix. Useful for removing colliding column names.",
+            "    Use $reset to reset to null.",
+        ],
+        "clear": [
+            "Clears the screen"
+        ],
+        "help": [
+            "Prints this help message"
+        ],
+        "exit": [
+            "Exits the program. (Calls SIGINT)"
+        ]
     },
     prompt(...p) {
         if (p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
@@ -246,13 +272,10 @@ const appCommands = {
         process.stdout.clearScreenDown();
         return null;
     },
-    help(...c) {},
+    help: printHelp,
     exit() {
         process.emit("SIGINT");
     },
-};
-appCommands.help = function (...c) {
-
 };
 
 function handleAppCommand(cmd) {
@@ -261,22 +284,6 @@ function handleAppCommand(cmd) {
     cmd = cmd.split(" ");
     if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = appCommands[cmd[0]](...cmd.slice(1));
     else appCommands.badCommand();
-
-    // switch (cmd[0].toLowerCase()) {
-    //     case "clear":
-    //         process.stdout.cursorTo(0, 0);
-    //         process.stdout.clearScreenDown();
-    //         break;
-    //     case "help":
-    //         printHelp();
-    //         break;
-    //     default:
-    //         ret = {
-    //             message: "Unknown app command: " + cmd,
-    //             code: "NULLAPPCMD",
-    //             errno: 100
-    //         };
-    // }
 
     if (ret !== null && ret.errno !== undefined) throw ret;
     if (!Array.isArray(ret) && ret !== null) ret = [ret];
@@ -419,8 +426,18 @@ function enterRepl() {
     });
 }
 
-function printHelp() {
+function printHelp(cmd) {
+    let h = [""];
 
+    for (let c in appCommands) {
+        if (c === "_") continue;
+        if(!!cmd && c !== cmd) continue;
+        h.push("/" + c);
+        h = h.concat(appCommands._[c].map(v => "  " + v));
+        h.push("");
+    }
+
+    return h.map(v => "  " + v).join("\n");
 }
 
 if (require.main === module) {
