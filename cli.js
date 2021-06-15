@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const args = require('yargs')
     .scriptName("sqlcli")
     .showHelpOnFail(true)
@@ -37,10 +39,11 @@ const args = require('yargs')
         });
     });
 
+const requireg = require("requireg");
 const rl = require("readline");
 const vm = require("vm");
 const $ = [];
-const $s = [];
+const $$ = [];
 const vmContext = vm.createContext();
 Object.defineProperties(vmContext, {
     $: {
@@ -49,11 +52,11 @@ Object.defineProperties(vmContext, {
     $0: {
         get: () => Object.values(Object.assign({}, Array.from($)[0]))
     },
-    $s: {
-        get: () => Array.from($s)
+    $$: {
+        get: () => Array.from($$)
     },
-    $s0: {
-        get: () => Object.values(Object.assign({}, Array.from($s)[0]))
+    $$0: {
+        get: () => Object.values(Object.assign({}, Array.from($$)[0]))
     },
 });
 const mysql = require("mysql2/promise");
@@ -83,7 +86,8 @@ let settings = {
         mode: rawModes.values,
         getMode: (v) => Object.keys(rawModes).find(e => rawModes[e] == (v || settings.raw.mode))
     },
-    nestTables: null
+    nestTables: null,
+    saveCount: 20
 };
 
 let lastRetCode = 0;
@@ -143,10 +147,10 @@ async function processArgs() {
 async function handleCommand(data) {
     if (data.startsWith(">")) {
         // do it in a different repl
-        return handleJsInstruction(data.substring(1));
+        return await handleJsInstruction(data.substring(1));
     } else if (data.startsWith("/")) {
         // set it with a setting
-        return handleAppCommand(data.substring(1));
+        return await handleAppCommand(data.substring(1));
     } else {
         // execute on the server
         if (db === null) throw {
@@ -163,7 +167,9 @@ async function handleCommand(data) {
             nestTables: settings.nestTables
         });
         $.splice(0, 0, r[0]);
-        $s.splice(0, 0, r[1]);
+        $.splice(settings.saveCount, $.length - settings.saveCount);
+        $$.splice(0, 0, r[1]);
+        $$.splice(settings.saveCount, $$.length - settings.saveCount);
 
         if (settings.raw.active && !suppress) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
         else if (!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0]);
@@ -178,6 +184,10 @@ function handleJsInstruction(inst) {
             displayErrors: true,
             breakOnSigint: true,
         });
+        if (ret === undefined && inst.trim().startsWith("let")) {
+            ret = vm.runInNewContext(inst.trim().split(/ +/)[1], vmContext);
+            if (ret === undefined) ret = chalk.italic.grey("undefined...");
+        }
         return ret;
     } catch (err) {
         logerr(err);
@@ -213,6 +223,37 @@ const appCommands = {
         "exit": [
             "Exits the program. (Calls SIGINT)"
         ]
+    },
+    async dump(...tables) {
+        let exec = async (sql) => await (await db).query(sql);
+        tables = tables.length > 0 ? Array.from(tables) : (await exec("show tables"))[0].map(e => Object.values(e)[0]);
+
+        let dump = ["-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --", ""];
+        let miniDump = [];
+        let ret = {};
+
+        for (let t of tables) {
+            ret = (await exec("show create table " + t))[0][0];
+            dump.push("-- " + ret["Table"] + " --"); // jshint ignore:line
+            dump.push(ret["Create Table"]);
+            dump.push("");
+
+            ret = (await exec("select * from " + t));
+            if (ret[0][0] !== undefined) {
+                let qmark = Object.keys(ret[0][0]).map(() => "?").join(", ");
+                dump.push(mysql.format(`INSERT INTO ${t} (${qmark}) VALUES`, Object.keys(ret[0][0])));
+                miniDump = [];
+                for (let r of ret[0]) {
+                    miniDump.push("    " + mysql.format(`(${qmark})`, Object.values(r)));
+                }
+                dump.push(miniDump.join(",\n"));
+                dump[dump.length - 1] += ";";
+                dump.push("");
+            }
+        }
+
+        dump.push("", "-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --");
+        return dump.join("\n");
     },
     prompt(...p) {
         if (p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
@@ -278,11 +319,11 @@ const appCommands = {
     },
 };
 
-function handleAppCommand(cmd) {
+async function handleAppCommand(cmd) {
     let ret = null;
 
     cmd = cmd.split(" ");
-    if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = appCommands[cmd[0]](...cmd.slice(1));
+    if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = await appCommands[cmd[0]](...cmd.slice(1));
     else appCommands.badCommand();
 
     if (ret !== null && ret.errno !== undefined) throw ret;
@@ -431,7 +472,7 @@ function printHelp(cmd) {
 
     for (let c in appCommands) {
         if (c === "_") continue;
-        if(!!cmd && c !== cmd) continue;
+        if (!!cmd && c !== cmd) continue;
         h.push("/" + c);
         h = h.concat(appCommands._[c].map(v => "  " + v));
         h.push("");
