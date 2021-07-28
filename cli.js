@@ -201,7 +201,7 @@ const appCommands = {
             "Prompt can be any string, and can include $config values or be $reset to reset"
         ],
         "set": [
-            "[setting] [values..]",
+            "[setting] [values...]",
             "Gets or sets the setting. Settings:",
             "raw active           -- Gets the raw active setting",
             "raw active [on/off]  -- Sets the raw active setting to on or off",
@@ -213,6 +213,10 @@ const appCommands = {
             "nesttables           -- Gets the nest tables prefix",
             "nesttables [prefix]  -- Sets the nest tables prefix. Useful for removing colliding column names.",
             "    Use $reset to reset to null.",
+        ],
+        "dump": [
+            "[tables...]",
+            "Creates an exact copy of the tables in SQL format. If no tables are specified, this will dump all tables in the database."
         ],
         "clear": [
             "Clears the screen"
