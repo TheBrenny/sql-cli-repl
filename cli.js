@@ -19,15 +19,14 @@ const args = require('yargs')
             },
             "port": {
                 number: true,
-                default: 3306
             },
             "database": {
                 alias: ["db"],
                 string: true,
             },
             "driver": {
+                alias: ["d"],
                 string: true,
-                default: "mysql"
             }
         });
     })
@@ -78,6 +77,7 @@ let config = {
     user: null,
     password: null,
     database: null,
+    driver: null,
 };
 let settings = {
     prompt: "mysql",
@@ -105,11 +105,12 @@ function logerr(err) {
     if (err instanceof Error) {
         err = {
             name: err.name,
-            errno: err.code || -1,
+            code: err.code || -1,
             message: err.message,
             stack: err.stack || "no stack"
         };
     }
+    // TODO: Pretty print the errors
     process.stderr.write(typeof err === "string" ? err : JSON.stringify(err, null, 2).replace(/\\n/g, "\n").replace(/\\\\/g, "\\"));
     process.stderr.write("\n");
 }
@@ -122,22 +123,53 @@ async function processArgs() {
     config.user = args.username || config.user;
     config.password = args.password || config.password;
     config.database = args.database || config.database;
+    config.driver = args.driver || config.driver;
 
     try {
         if (config.uri) {
             let obj = url.parse(config.uri);
-            if (!obj.protocol.startsWith("mysql")) throw {
-                message: "Bad MySQL URI. Protocol must be 'mysql://'.",
-                code: "BADURI",
-                errno: 11
-            };
             config.host = obj.hostname;
             config.port = obj.port;
             [config.user, config.password] = obj.auth.split(":");
             config.database = obj.pathname.substr(1);
         }
 
-        if (config.uri || config.host) await (db = mysql.createConnection(config.uri || config));
+        if (config.uri || config.host) await (connectToDB(config.uri || config));
+    } catch (err) {
+        logerr(err);
+        db = null;
+    }
+}
+
+async function connectToDB(opts) {
+    try {
+        let driver;
+        if (typeof opts === "string") {
+            let obj = url.parse(opts);
+            opts = {};
+            opts.host = obj.hostname;
+            opts.port = obj.port;
+            [opts.user, opts.password] = obj.auth.split(":");
+            opts.database = obj.pathname.substr(1);
+            driver = obj.protocol.substring(0, obj.protocol.length - 1);
+        } else {
+            driver = opts.driver;
+        }
+        // TODO: This is where `requirereg` is needed to make sure that we can accomodate the passed driver
+        // TODO: We need to make this actually work better. I need to create some form of documentation which
+        //       dictates how drivers need to be made!!
+        switch (driver) {
+            case "mysql":
+                driver = mysql;
+                break;
+            default:
+                throw {
+                    message: `Bad protocol must be '${driver}'.`,
+                        name: "BADURI",
+                        code: 11
+                };
+        }
+        return (db = await driver.createConnection(opts));
     } catch (err) {
         logerr(err);
         db = null;
@@ -155,14 +187,14 @@ async function handleCommand(data) {
         // execute on the server
         if (db === null) throw {
             message: "DB not connected.",
-            code: "DBDISCON",
-            errno: 12
+            name: "DBDISCON",
+            code: 12
         };
 
         let suppress = data.endsWith("sh");
         if (suppress) data = data.substring(0, data.length - 2);
 
-        let r = await (await db).query({
+        let r = await db.query({
             sql: data,
             nestTables: settings.nestTables
         });
@@ -178,7 +210,6 @@ async function handleCommand(data) {
 }
 
 function handleJsInstruction(inst) {
-    // logn(chalk.italic.blue("JS VM coming soon..."));
     try {
         let ret = vm.runInContext(inst, vmContext, {
             displayErrors: true,
@@ -196,12 +227,27 @@ function handleJsInstruction(inst) {
 
 const appCommands = {
     "_": {
+        "commands": [
+            "Prints out all available commands."
+        ],
+        "connect": [
+            "[driver] [user] [pass] [host] [?port]",
+            "Connects to the host using the specified username and password. Disconnects from the currently connected database if not done already.",
+            "Port is optional, and defaults to whatever the driver defaults to."
+        ],
+        "connectu": [
+            "[uri]",
+            "Connects to the database at the specified URI. Determines the driver automatically. Disconnects from the currently connected database if not done already.",
+        ],
+        "disconnect": [
+            "Disconnects from the currently connected database."
+        ],
         "prompt": [
-            "[prompt]",
+            "[?prompt]",
             "Prompt can be any string, and can include $config values or be $reset to reset"
         ],
         "set": [
-            "[setting] [values...]",
+            "[?setting] [?values...]",
             "Gets or sets the setting. Settings:",
             "raw active           -- Gets the raw active setting",
             "raw active [on/off]  -- Sets the raw active setting to on or off",
@@ -215,13 +261,14 @@ const appCommands = {
             "    Use $reset to reset to null.",
         ],
         "dump": [
-            "[tables...]",
+            "[?tables...]",
             "Creates an exact copy of the tables in SQL format. If no tables are specified, this will dump all tables in the database."
         ],
         "clear": [
             "Clears the screen"
         ],
         "help": [
+            "[?command]",
             "Prints this help message"
         ],
         "exit": [
@@ -229,7 +276,7 @@ const appCommands = {
         ]
     },
     async dump(...tables) {
-        let exec = async (sql) => await (await db).query(sql);
+        let exec = async (sql) => await db.query(sql);
         tables = tables.length > 0 ? Array.from(tables) : (await exec("show tables"))[0].map(e => Object.values(e)[0]);
 
         let dump = ["-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --", ""];
@@ -258,6 +305,27 @@ const appCommands = {
 
         dump.push("", "-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --");
         return dump.join("\n");
+    },
+    async connect(driver, user, pass, host) {
+        let opts = {
+            host,
+            user,
+            password: pass
+        };
+        await connectToDB(opts);
+        setDefaultPrompt();
+        return null;
+    },
+    async connectu(uri) {
+        await connectToDB(uri);
+        setDefaultPrompt();
+        return null;
+    },
+    disconnect() {
+        db.end();
+        db = null;
+        setDefaultPrompt();
+        return null;
     },
     prompt(...p) {
         if (p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
@@ -290,8 +358,8 @@ const appCommands = {
                     default:
                         ret = {
                             message: "Unknown raw setting: " + values[0],
-                            code: "NULLAPPSET",
-                            errno: 110
+                            name: "NULLAPPSET",
+                            code: 110
                         };
                         return ret;
                 }
@@ -306,8 +374,8 @@ const appCommands = {
             default:
                 ret = {
                     message: "Unknown app setting: " + key,
-                    code: "NULLAPPSET",
-                    errno: 110
+                    name: "NULLAPPSET",
+                    code: 110
                 };
                 return ret;
         }
@@ -317,20 +385,26 @@ const appCommands = {
         process.stdout.clearScreenDown();
         return null;
     },
+    commands() {
+        return Object.keys(appCommands).filter(c => c !== "_");
+    },
     help: printHelp,
     exit() {
         process.emit("SIGINT");
     },
 };
+async function badCommand(cmd) {
+    return chalk.italic.red("Unknown command: \"" + cmd + "\"");
+}
 
 async function handleAppCommand(cmd) {
     let ret = null;
 
     cmd = cmd.split(" ");
     if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = await appCommands[cmd[0]](...cmd.slice(1));
-    else appCommands.badCommand();
+    else return (await badCommand(cmd));
 
-    if (ret !== null && ret.errno !== undefined) throw ret;
+    if (ret !== null && ret.code !== undefined) throw ret;
     if (!Array.isArray(ret) && ret !== null) ret = [ret];
 
     return (ret === null ? null : ret.map(r => chalk.italic.green("  " + r)).join("\n"));
@@ -440,7 +514,7 @@ function enterRepl() {
                 })
                 .catch((err) => {
                     logerr(err);
-                    return err.errno;
+                    return err.code;
                 })
                 .finally((retcode) => {
                     lastRetCode = retcode;
