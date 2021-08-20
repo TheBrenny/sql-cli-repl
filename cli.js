@@ -177,6 +177,8 @@ async function connectToDB(opts) {
 }
 
 async function handleCommand(data) {
+    data = data.trim();
+
     if (data.startsWith(">")) {
         // do it in a different repl
         return await handleJsInstruction(data.substring(1));
@@ -561,5 +563,32 @@ function printHelp(cmd) {
 
 if (require.main === module) {
     if (yargs.argv.help) yargs.showHelp();
-    else processArgs().then(enterRepl).catch(logerr);
+    else processArgs().then(() => new Promise((resolve, reject) => {
+            if (process.stdin.isTTY) return enterRepl();
+            else {
+                let data = "";
+                let stdin = process.stdin;
+
+                stdin.on('data', (chunk) => data += chunk);
+                stdin.on('end', function () {
+                    return Promise.resolve(data)
+                        .then((ret) => handleCommand(ret))
+                        .then((ret) => {
+                            if (ret !== null) logn(ret);
+                            return 0;
+                        })
+                        .catch((err) => {
+                            logerr(err);
+                            return err.code;
+                        }).finally((retcode) => {
+                            lastRetCode = retcode;
+                            resolve(retcode);
+                        });
+                });
+
+                stdin.on('error', reject);
+            }
+        }))
+        .catch((err) => (logerr(err), err.code))
+        .finally((code) => process.exit(code || lastRetCode || 0));
 } else module.exports = {};
