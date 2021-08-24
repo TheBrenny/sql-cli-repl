@@ -28,9 +28,9 @@
   },
   "homepage": "https://github.com/thebrenny/mysql-cli#readme",
   "dependencies": {
-    "chalk": "^4.1.1",
-    "mysql2": "^2.2.5",
+    "chalk": "^4.1.2",
+    "mysql2": "^2.3.0",
     "requireg": "^0.2.2",
-    "yargs": "^17.0.1"
+    "yargs": "^17.1.1"
   }
 }
