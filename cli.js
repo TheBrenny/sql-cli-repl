@@ -158,6 +158,7 @@ async function connectToDB(opts) {
         // TODO: This is where `requirereg` is needed to make sure that we can accomodate the passed driver
         // TODO: We need to make this actually work better. I need to create some form of documentation which
         //       dictates how drivers need to be made!!
+        Object.assign(config, opts);
         switch (driver) {
             case "mysql":
                 driver = mysql;
