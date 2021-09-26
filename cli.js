@@ -102,7 +102,7 @@ function logn(obj) {
 }
 
 function logerr(err) {
-    if (err instanceof Error) {
+    if(err instanceof Error) {
         err = {
             name: err.name,
             code: err.code || -1,
@@ -126,7 +126,7 @@ async function processArgs() {
     config.driver = args.driver || config.driver;
 
     try {
-        if (config.uri) {
+        if(config.uri) {
             let obj = url.parse(config.uri);
             config.host = obj.hostname;
             config.port = obj.port;
@@ -134,8 +134,8 @@ async function processArgs() {
             config.database = obj.pathname.substr(1);
         }
 
-        if (config.uri || config.host) await (connectToDB(config.uri || config));
-    } catch (err) {
+        if(config.uri || config.host) await (connectToDB(config.uri || config));
+    } catch(err) {
         logerr(err);
         db = null;
     }
@@ -144,7 +144,7 @@ async function processArgs() {
 async function connectToDB(opts) {
     try {
         let driver;
-        if (typeof opts === "string") {
+        if(typeof opts === "string") {
             let obj = url.parse(opts);
             opts = {};
             opts.host = obj.hostname;
@@ -159,19 +159,19 @@ async function connectToDB(opts) {
         // TODO: We need to make this actually work better. I need to create some form of documentation which
         //       dictates how drivers need to be made!!
         Object.assign(config, opts);
-        switch (driver) {
+        switch(driver) {
             case "mysql":
                 driver = mysql;
                 break;
             default:
                 throw {
                     message: `Bad protocol must be '${driver}'.`,
-                        name: "BADURI",
-                        code: 11
+                    name: "BADURI",
+                    code: 11
                 };
         }
         return (db = await driver.createConnection(opts));
-    } catch (err) {
+    } catch(err) {
         logerr(err);
         db = null;
     }
@@ -180,22 +180,22 @@ async function connectToDB(opts) {
 async function handleCommand(data) {
     data = data.trim();
 
-    if (data.startsWith(">")) {
+    if(data.startsWith(">")) {
         // do it in a different repl
         return await handleJsInstruction(data.substring(1));
-    } else if (data.startsWith("/")) {
+    } else if(data.startsWith("/")) {
         // set it with a setting
         return await handleAppCommand(data.substring(1));
     } else {
         // execute on the server
-        if (db === null) throw {
+        if(db === null) throw {
             message: "DB not connected.",
             name: "DBDISCON",
             code: 12
         };
 
         let suppress = data.endsWith("sh");
-        if (suppress) data = data.substring(0, data.length - 2);
+        if(suppress) data = data.substring(0, data.length - 2);
 
         let r = await db.query({
             sql: data,
@@ -206,8 +206,8 @@ async function handleCommand(data) {
         $$.splice(0, 0, r[1]);
         $$.splice(settings.saveCount, $$.length - settings.saveCount);
 
-        if (settings.raw.active && !suppress) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
-        else if (!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0]);
+        if(settings.raw.active && !suppress) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
+        else if(!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0]);
         else return null;
     }
 }
@@ -218,12 +218,12 @@ function handleJsInstruction(inst) {
             displayErrors: true,
             breakOnSigint: true,
         });
-        if (ret === undefined && inst.trim().startsWith("let")) {
+        if(ret === undefined && inst.trim().startsWith("let")) {
             ret = vm.runInNewContext(inst.trim().split(/ +/)[1], vmContext);
-            if (ret === undefined) ret = chalk.italic.grey("undefined...");
+            if(ret === undefined) ret = chalk.italic.grey("undefined...");
         }
         return ret;
-    } catch (err) {
+    } catch(err) {
         logerr(err);
     }
 }
@@ -286,18 +286,18 @@ const appCommands = {
         let miniDump = [];
         let ret = {};
 
-        for (let t of tables) {
+        for(let t of tables) {
             ret = (await exec("show create table " + t))[0][0];
             dump.push("-- " + ret["Table"] + " --"); // jshint ignore:line
             dump.push(ret["Create Table"]);
             dump.push("");
 
             ret = (await exec("select * from " + t));
-            if (ret[0][0] !== undefined) {
+            if(ret[0][0] !== undefined) {
                 let qmark = Object.keys(ret[0][0]).map(() => "?").join(", ");
                 dump.push(mysql.format(`INSERT INTO ${t} (${qmark}) VALUES`, Object.keys(ret[0][0])));
                 miniDump = [];
-                for (let r of ret[0]) {
+                for(let r of ret[0]) {
                     miniDump.push("    " + mysql.format(`(${qmark})`, Object.values(r)));
                 }
                 dump.push(miniDump.join(",\n"));
@@ -331,11 +331,11 @@ const appCommands = {
         return null;
     },
     prompt(...p) {
-        if (p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
+        if(p.length == 0 || p.join("").trim() == "") return `Current Prompt: ${settings.prompt}`;
 
-        if (p[0].toLowerCase() == "$reset") setDefaultPrompt();
+        if(p[0].toLowerCase() == "$reset") setDefaultPrompt();
         else {
-            for (let c in config) p = p.map(v => v.replace(new RegExp("\\$" + c, "gi"), config[c])); //jshint ignore:line
+            for(let c in config) p = p.map(v => v.replace(new RegExp("\\$" + c, "gi"), config[c])); //jshint ignore:line
             setPrompt(p.join(" "));
         }
 
@@ -344,17 +344,17 @@ const appCommands = {
     set(...v) {
         let key = v[0];
         let values = v.slice(1);
-        switch (key) {
+        switch(key) {
             case "raw":
-                if (values.length == 0) return [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.getMode()}`];
-                switch (values[0]) {
+                if(values.length == 0) return [`Raw active: ${settings.raw.active ? "on" : "off"}`, `Raw mode: ${settings.raw.getMode()}`];
+                switch(values[0]) {
                     case "active":
-                        if (values.length == 1) return `Raw active: ${settings.raw.active ? "on" : "off"}`;
+                        if(values.length == 1) return `Raw active: ${settings.raw.active ? "on" : "off"}`;
 
                         settings.raw.active = ["true", "on"].includes(values[1].trim().toLowerCase());
                         return `Raw active ${settings.raw.active ? "on" : "off"}`;
                     case "mode":
-                        if (values.length == 1) return `Raw mode: ${settings.raw.getMode()}`;
+                        if(values.length == 1) return `Raw mode: ${settings.raw.getMode()}`;
 
                         settings.raw.mode = rawModes[values[1].trim().toLowerCase()] || rawModes.values;
                         return `Raw mode ${settings.raw.getMode()}`;
@@ -368,9 +368,9 @@ const appCommands = {
                 }
                 break;
             case "nesttables":
-                if (values.length == 0) return `Nest tables: ${settings.nestTables ? "on" : "off"}`;
+                if(values.length == 0) return `Nest tables: ${settings.nestTables ? "on" : "off"}`;
 
-                if (values == "$reset") settings.nestTables = null;
+                if(values == "$reset") settings.nestTables = null;
                 else settings.nestTables = values[0];
 
                 return `Nest tables ${settings.nestTables || "off"}`;
@@ -404,17 +404,17 @@ async function handleAppCommand(cmd) {
     let ret = null;
 
     cmd = cmd.split(" ");
-    if (cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = await appCommands[cmd[0]](...cmd.slice(1));
+    if(cmd[0] !== "_" && !!appCommands[cmd[0]]) ret = await appCommands[cmd[0]](...cmd.slice(1));
     else return (await badCommand(cmd));
 
-    if (ret !== null && ret.code !== undefined) throw ret;
-    if (!Array.isArray(ret) && ret !== null) ret = [ret];
+    if(ret !== null && ret.code !== undefined) throw ret;
+    if(!Array.isArray(ret) && ret !== null) ret = [ret];
 
     return (ret === null ? null : ret.map(r => chalk.italic.green("  " + r)).join("\n"));
 }
 
 function handleSQLResponse(records) {
-    if (records.length == 0) return "Returned " + chalk.yellow("0") + " rows.";
+    if(records.length == 0) return "Returned " + chalk.yellow("0") + " rows.";
     let keys = Object.keys(records[0]);
     let data = new Array(keys.length).fill(new Array(1 + records.length));
     let lengths = new Array(keys.length);
@@ -423,22 +423,22 @@ function handleSQLResponse(records) {
         clampLength = Math.min(clampLength, maxLength);
         str = str.padStart(clampLength, " ");
 
-        if (str.length > clampLength) str = str.substring(0, clampLength - 4) + " ...";
+        if(str.length > clampLength) str = str.substring(0, clampLength - 4) + " ...";
         else str = str.substring(0, clampLength);
 
         return str;
     };
     const buildRecordRow = (r, a, c) => a.concat(c[r]);
 
-    for (let k = 0; k < keys.length; k++) {
+    for(let k = 0; k < keys.length; k++) {
         data[k][0] = keys[k];
         lengths[k] = [];
         lengths[k].push(keys[k].length);
-        for (let r = 0; r < records.length; r++) {
+        for(let r = 0; r < records.length; r++) {
             let rec = records[r][keys[k]];
-            if (rec === null || rec === undefined) rec = "null";
-            if (rec instanceof Date) rec = rec.toJSON();
-            if (typeof rec === "object") {
+            if(rec === null || rec === undefined) rec = "null";
+            if(rec instanceof Date) rec = rec.toJSON();
+            if(typeof rec === "object") {
                 rec = JSON.parse(JSON.stringify(rec));
                 rec = (rec.type || "???????").substring(0, 3) + JSON.stringify(rec.data);
             }
@@ -452,7 +452,7 @@ function handleSQLResponse(records) {
     }
 
     let lines = [];
-    for (let r = 0; r < records.length + 1; r++) {
+    for(let r = 0; r < records.length + 1; r++) {
         let line = "| " + data.reduce(buildRecordRow.bind(null, r), []).join(" | ") + " |";
         lines.push(line);
     }
@@ -467,7 +467,7 @@ function handleSQLModify(record) {
     let id = record.insertId;
     let rows = record.affectedRows;
 
-    if (id == 0) return "Deleted " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
+    if(id == 0) return "Deleted " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
     else return "Altered " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
 }
 
@@ -502,17 +502,17 @@ function enterRepl() {
         data = data.trim();
         d += data;
 
-        if (isValidCommand(d)) {
+        if(isValidCommand(d)) {
             Promise.resolve(d)
                 .then((ret) => {
-                    if (p !== null) setPrompt(p);
+                    if(p !== null) setPrompt(p);
                     p = null;
                     repl.pause();
                     return ret;
                 })
                 .then((ret) => handleCommand(ret))
                 .then((ret) => {
-                    if (ret !== null) logn(ret);
+                    if(ret !== null) logn(ret);
                     return 0;
                 })
                 .catch((err) => {
@@ -525,9 +525,9 @@ function enterRepl() {
                     repl.resume();
                 });
             d = "";
-        } else if (d != "") {
+        } else if(d != "") {
             d += " ";
-            if (p === null) p = settings.prompt;
+            if(p === null) p = settings.prompt;
             repl.setPrompt("... ");
             repl.prompt();
         } else {
@@ -535,12 +535,12 @@ function enterRepl() {
         }
     }).on("SIGINT", () => process.emit("SIGINT"));
     process.on("SIGINT", () => {
-        if (d === "") {
+        if(d === "") {
             logn("\nBye!");
             process.exit(lastRetCode);
         } else {
             d = "";
-            if (p !== null) setPrompt(p);
+            if(p !== null) setPrompt(p);
             p = null;
             log("\n");
             repl.emit("line", "");
@@ -551,9 +551,9 @@ function enterRepl() {
 function printHelp(cmd) {
     let h = [""];
 
-    for (let c in appCommands) {
-        if (c === "_") continue;
-        if (!!cmd && c !== cmd) continue;
+    for(let c in appCommands) {
+        if(c === "_") continue;
+        if(!!cmd && c !== cmd) continue;
         h.push("/" + c);
         h = h.concat(appCommands._[c].map(v => "  " + v));
         h.push("");
@@ -562,34 +562,34 @@ function printHelp(cmd) {
     return h.map(v => "  " + v).join("\n");
 }
 
-if (require.main === module) {
-    if (yargs.argv.help) yargs.showHelp();
+if(require.main === module) {
+    if(yargs.argv.help) yargs.showHelp();
     else processArgs().then(() => new Promise((resolve, reject) => {
-            if (process.stdin.isTTY) return enterRepl();
-            else {
-                let data = "";
-                let stdin = process.stdin;
+        if(process.stdin.isTTY) return enterRepl();
+        else {
+            let data = "";
+            let stdin = process.stdin;
 
-                stdin.on('data', (chunk) => data += chunk);
-                stdin.on('end', function () {
-                    return Promise.resolve(data)
-                        .then((ret) => handleCommand(ret))
-                        .then((ret) => {
-                            if (ret !== null) logn(ret);
-                            return 0;
-                        })
-                        .catch((err) => {
-                            logerr(err);
-                            return err.code;
-                        }).finally((retcode) => {
-                            lastRetCode = retcode;
-                            resolve(retcode);
-                        });
-                });
+            stdin.on('data', (chunk) => data += chunk);
+            stdin.on('end', function () {
+                return Promise.resolve(data)
+                    .then((ret) => handleCommand(ret))
+                    .then((ret) => {
+                        if(ret !== null) logn(ret);
+                        return 0;
+                    })
+                    .catch((err) => {
+                        logerr(err);
+                        return err.code;
+                    }).finally((retcode) => {
+                        lastRetCode = retcode;
+                        resolve(retcode);
+                    });
+            });
 
-                stdin.on('error', reject);
-            }
-        }))
+            stdin.on('error', reject);
+        }
+    }))
         .catch((err) => (logerr(err), err.code))
         .finally((code) => process.exit(code || lastRetCode || 0));
 } else module.exports = {};
