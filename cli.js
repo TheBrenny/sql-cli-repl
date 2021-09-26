@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const args = require('yargs')
+const yargs = require('yargs')
     .scriptName("sqlcli")
     .showHelpOnFail(true)
     .command("$0", "Create an SQL CLI that is disconnected to begin with", (y) => {
@@ -21,12 +21,23 @@ const args = require('yargs')
                 number: true,
             },
             "database": {
-                alias: ["db"],
+                alias: ["b"],
                 string: true,
             },
             "driver": {
                 alias: ["d"],
                 string: true,
+            },
+            "variable": {
+                alias: ["v"],
+                string: true,
+                describe: "The environment variable holding the URI to connect to",
+                demand: "Required to connect to a databse"
+            },
+            "dotenv": {
+                alias: ["e"],
+                string: true,
+                describe: "The path to a DotEnv file"
             }
         });
     })
@@ -41,6 +52,8 @@ const args = require('yargs')
 const requireg = require("requireg");
 const rl = require("readline");
 const vm = require("vm");
+const path = require("path");
+const fs = require("fs");
 const $ = [];
 const $$ = [];
 const vmContext = vm.createContext();
@@ -61,7 +74,6 @@ Object.defineProperties(vmContext, {
 const mysql = require("mysql2/promise");
 const chalk = require("chalk");
 const url = require("url");
-const yargs = require('yargs');
 const rawModes = {
     "all": 0b11,
     "schema": 0b10,
@@ -124,6 +136,19 @@ async function processArgs() {
     config.password = args.password || config.password;
     config.database = args.database || config.database;
     config.driver = args.driver || config.driver;
+
+    if(args.variable) {
+        let env = Object.assign({}, process.env);
+        if(!!args.dotenv) {
+            try {
+                let de = require("dotenv").parse(fs.readFileSync(path.resolve(args.dotenv)));
+                env = Object.assign(env, de);
+            } catch(err) {
+                logerr(err);
+            }
+        }
+        config.uri = env[args.variable];
+    }
 
     try {
         if(config.uri) {
@@ -242,6 +267,10 @@ const appCommands = {
             "[uri]",
             "Connects to the database at the specified URI. Determines the driver automatically. Disconnects from the currently connected database if not done already.",
         ],
+        "connecte": [
+            "[variable] [?dotenvFile]",
+            "Connects to the database using the URI found in the environment variable, optionally found in the DotEnv file specified."
+        ],
         "disconnect": [
             "Disconnects from the currently connected database."
         ],
@@ -320,6 +349,17 @@ const appCommands = {
         return null;
     },
     async connectu(uri) {
+        await connectToDB(uri);
+        setDefaultPrompt();
+        return null;
+    },
+    async connecte(variable, dotenvFile) {
+        let env = Object.assign({}, process.env);
+        if(!!dotenvFile) {
+            let de = require("dotenv").parse(fs.readFileSync(dotenvFile));
+            env = Object.assign(env, de);
+        }
+        let uri = env[variable];
         await connectToDB(uri);
         setDefaultPrompt();
         return null;
