@@ -524,7 +524,7 @@ function handleSQLModify(record, action) {
     let rows = record.affectedRows;
     let changed = record.changedRows;
 
-    return `${action} ${chalk.yellow(changed)} record${rows == 1 ? "" : "s"} (${rows} accessed).`;
+    return `${action} ${chalk.yellow(changed)} record${changed == 1 ? "" : "s"} (${rows} accessed).`;
 }
 
 function isValidCommand(c) {
