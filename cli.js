@@ -232,7 +232,7 @@ async function handleCommand(data) {
         $$.splice(settings.saveCount, $$.length - settings.saveCount);
 
         if(settings.raw.active && !suppress) return settings.raw.mode == rawModes.all ? r : settings.raw.mode == rawModes.schema ? r[1] : r[0];
-        else if(!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0]);
+        else if(!suppress) return r[1] != null ? handleSQLResponse(r[0]) : handleSQLModify(r[0], data.split(" ")[0]);
         else return null;
     }
 }
@@ -503,12 +503,28 @@ function handleSQLResponse(records) {
     return lines.join("\n");
 }
 
-function handleSQLModify(record) {
+const actionMap = {
+    "DELETE": "Deleted",
+    "INSERT": "Inserted",
+    "UPDATE": "Updated",
+    "ALTER": "Altered",
+    "CREATE": "Created",
+    "DROP": "Dropped",
+    "TRUNCATE": "Truncated",
+    "RENAME": "Renamed",
+    "REPLACE": "Replaced",
+    "LOAD": "Loaded",
+};
+function handleSQLModify(record, action) {
+    action = action.toUpperCase();
+    action = actionMap[action] || action;  
+    // TODO: Change this to a map between action and human word
+    action = action.substring(0,1).toUpperCase() + action.substring(1).toLowerCase();
     let id = record.insertId;
     let rows = record.affectedRows;
+    let changed = record.changedRows;
 
-    if(id == 0) return "Deleted " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
-    else return "Altered " + chalk.yellow(rows) + " record" + (rows == 1 ? "" : "s") + ".";
+    return `${action} ${chalk.yellow(changed)} record${rows == 1 ? "" : "s"} (${rows} accessed).`;
 }
 
 function isValidCommand(c) {
