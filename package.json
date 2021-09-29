@@ -29,11 +29,11 @@
   "homepage": "https://github.com/thebrenny/mysql-cli#readme",
   "dependencies": {
     "chalk": "^4.1.2",
+    "dotenv": "^10.0.0",
     "mysql2": "^2.3.0",
     "requireg": "^0.2.2",
     "yargs": "^17.2.1"
   },
   "optionalDependencies": {
-    "dotenv": "^10.0.0"
   }
 }

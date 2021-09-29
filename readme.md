@@ -2,29 +2,33 @@
 
 > *A NodeJS-based SQL command line interface which is just what you need when you don't want to install an SQL client locally.*
 
-This package lets you connect to [any SQL server](#drivers) and execute queries. Query results are stored in a JS VM context which you're then able to manipulate.
+This package lets you connect to [any SQL server](#drivers)* and execute queries. Query results are stored in a JS VM context which you're then able to manipulate.
+
+<small>* Interchangeable drivers not yet available. Maybe you can help flesh a generic class out?</small>
 
 ## Install
 
-```commandline
+```console
 $ npm install -g sql-cli-repl
 ```
 
-This package is intended to be installed globally as it acts as an alias for the official `mysqlcli` program, but if you find it conflicting, it might be worthwhile to install it locally as a `devDependency`.
+This package is intended to be installed globally because the idea is that it can replace all those other SQL Clients you might need, but it might be worthwhile to install it locally as a `devDependency` as well!
 
-```commandline
+```console
 $ npm install --save-dev sql-cli-repl
 ```
 
 ## Usage
 
 Open a connection using a URI or through args
-```plain
+```console
 $ sqlcli mysql://user:pass@localhost:3306/myDB
 OR
-$ sqlcli -u user -p pass -h localhost -db myDB
+$ sqlcli -d mysql -u user -p pass -h localhost -p 3306 -b myDB
+OR
+$ sqlcli -v SQL_URL -e ./.env # sqlcli -ve does the same thing!
 ```
-Find out more help using `sqlcli --help`
+Find out more help using `sqlcli --help` or `sqlcli -h`
 
 Execute typical SQL queries:
 ```plain
@@ -56,23 +60,28 @@ Execute JS on results
 ```plain
 user@localhost> SELECT 1 AS `One`, 2 AS `Two`;
 user@localhost> >$0
-
+[
+  {
+    "One": 1,
+    "Two": 2
+  }
+]
 ```
 
 ## Commands
 
 There are three (point one) types of commands that this CLI can recognise:
-- [Node SQL CLI](#node-sql-cli)
-  - [Install](#install)
-  - [Usage](#usage)
-  - [Commands](#commands)
-    - [SQL Commands](#sql-commands)
-      - [SQL Commands Suppressed](#sql-commands-suppressed)
-    - [App Commands](#app-commands)
-    - [JS Commands](#js-commands)
-  - [Contributing](#contributing)
-    - [Drivers](#drivers)
-  - [License](#license)
+
+- [Install](#install)
+- [Usage](#usage)
+- [Commands](#commands)
+  - [SQL Commands](#sql-commands)
+    - [SQL Commands Suppressed](#sql-commands-suppressed)
+  - [App Commands](#app-commands)
+  - [JS Commands](#js-commands)
+- [Contributing](#contributing)
+  - [Drivers](#drivers)
+- [License](#license)
 
 ### SQL Commands
 
@@ -106,24 +115,50 @@ user@localhost>
 App commands allow you to interact directly with the application, such as modifying the prompt or clearing the screen, but it also lets you modify settings. These commands start with a `/` to denote that the following instructions should be handled by the application.
 
 All available commands:
-- `/clear` - Clears the screen
-- `/prompt [...p]` - Sets the prompt to your passed value `p` (automatically adds the `> `)
-  - `/prompt` - Ommitting `p` will display the current prompt value
-  - There are a number of `$` values that can be used as `p`:
-    - `$reset` - If passed by itself, this will reset the prompt to the default value (`$user@$host`)
-    - `$[config]` - Inserts the config option (user, host, pass, port, db, etc...)
-- `/set <setting> [...opts]` - Sets or shows the settings of the application. The following settings are available:
-  - `/set raw [opt] [val]`
-    - Without `val` shows either the whole raw mode setting or the specific raw mode setting. With `val` it sets the setting
-    - `opt` can be either `mode` or `active`
-    - More help can be found by calling `!help`
-- `/dump [...tables]` - Dumps the SQL statements for the whole database, so it can be recreated elsewhere
-  - `[...tables]` allows you to specify specific tables to dump
-- ***TO BE ADDED***
-- `/save [opt]` Saves data about the session to the PWD
-  - `/save session` Saves only the commands and results called
-  - `/save settings` Saves the current settings of the application
-  - `/save all` Saves the entire session (commands and settings)
+    
+- `/dump [?tables...]`
+  - Creates an exact copy of the tables in SQL format. If no tables are specified, this will dump all tables in the database.
+  
+- `/connect [driver] [user] [pass] [host] [?port]`
+  - Connects to the host using the specified username and password. Disconnects from the currently connected database if not done already.
+  - Port is optional, and defaults to whatever the driver defaults to.
+  
+- `/connectu [uri]`
+  - Connects to the database at the specified URI. Determines the driver automatically. Disconnects from the currently connected database if not done already.
+  
+- `/connecte [variable] [?dotenvFile]`
+  - Connects to the database using the URI found in the environment variable, optionally found in the DotEnv file specified.
+  
+- `/disconnect`
+  - Disconnects from the currently connected database.
+  
+- `/prompt [?prompt]`
+  - Prompt can be any string, and can include `$config` values or be `$reset` to reset.
+  
+- `/set [?setting] [?values...]`
+  - Gets or sets the setting. Settings:
+    - `raw active`           -- Gets the raw active setting
+    - `raw active [on/off]`  -- Sets the raw active setting to on or off
+    - `raw mode`             -- Gets the raw mode setting. Returns the value name
+    - `raw mode [value]`     -- Sets the raw mode setting. Value must be a number
+      - `1` - Values Only (default)
+      - `2` - Schema Only
+      - `3` - Values and Schema
+    - `nesttables`           -- Gets the nest tables prefix
+    - `nesttables [prefix]`  -- Sets the nest tables prefix. Useful for removing colliding column names.
+      - Use `$reset` to reset to `null`.
+  
+- `/clear`
+  - Clears the screen.
+  
+- `/commands`
+  - Prints out all available commands.
+  
+- `/help [?command]`
+  - Prints this help message, or the command's specific help message.
+  
+- `/exit`
+  - Exits the program. (Calls `SIGINT`)
 
 ### JS Commands
 
@@ -131,15 +166,17 @@ JS commands/instructions allow you to interact with the results of a query, such
 
 Additionally, there are some global variables that allow you to retrieve past results:
   - `$` - `Array` - Returns an array of the last results received, with the latest response at index 0.
-  - `$0` - `Object` - Returns the result of the last query executed. An alias for `$[0]`.
+  - `$0` - `Array` - Returns the result of the last query executed. An alias for `$[0]`. To get individual results, use `$0[i]` where `i` is the row of the returned result.
   - `$$` - `Array` - Returns an array of the schemas for the last results received, with the latest response at index 0.
-  - `$$0` - `Object` - Returns the schema for the last result received. An alias for `$$[0]`.
+  - `$$0` - `Array` - Returns the schema for the last result received. An alias for `$$[0]`.
 
 ## Contributing
 
 There are two ways to contribute: to the project, or by developing a new driver. Submit an issue, submit a PR, submit a suggestion!
 
 ### Drivers
+
+> **Drivers are coming soon!** The information below is completely false for now. This is just here to give a heads up and to remind me that this actually needs to get done at some point!
 
 This tool works by using [`requireg`](https://www.npmjs.com/package/requireg) to require modules following the format of `sql-cli-driver-[protocol]` (eg: [`sql-cli-driver-mysql`](https://github.com/TheBrenny/sql-cli-driver-mysql), or [`sql-cli-driver-sqlite`](https://github.com/TheBrenny/sql-cli-driver-sqlite)). If you're contributing a driver, it must expose particular methods to allow this CLI REPL tool to interact with it.
 

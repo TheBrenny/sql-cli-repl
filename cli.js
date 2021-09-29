@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const path = require("path");
 
 const yargs = require('yargs')
     .scriptName("sqlcli")
@@ -31,13 +32,12 @@ const yargs = require('yargs')
             "variable": {
                 alias: ["v"],
                 string: true,
-                describe: "The environment variable holding the URI to connect to",
-                demand: "Required to connect to a databse"
+                describe: "The environment variable holding the URI to connect to\n[default: SQL_URL]",
             },
             "dotenv": {
                 alias: ["e"],
                 string: true,
-                describe: "The path to a DotEnv file"
+                describe: "The path to a DotEnv file\n[default: ./.env]",
             }
         });
     })
@@ -52,7 +52,6 @@ const yargs = require('yargs')
 const requireg = require("requireg");
 const rl = require("readline");
 const vm = require("vm");
-const path = require("path");
 const fs = require("fs");
 const $ = [];
 const $$ = [];
@@ -138,15 +137,14 @@ async function processArgs() {
     config.driver = args.driver || config.driver;
 
     if(args.variable) {
+        args.variable = typeof args.variable === "string" ? args.variable : "SQL_URI";
         let env = Object.assign({}, process.env);
-        if(!!args.dotenv) {
-            try {
-                let de = require("dotenv").parse(fs.readFileSync(path.resolve(args.dotenv)));
-                env = Object.assign(env, de);
-            } catch(err) {
-                logerr(err);
-            }
+        if(args.dotenv) {
+            args.dotenv = typeof args.dotenv === "string" ? args.dotenv : "./.env";
+            let de = require("dotenv").parse(fs.readFileSync(path.resolve(args.dotenv)));
+            env = Object.assign(env, de);
         }
+        console.log(!!args.variable);
         config.uri = env[args.variable];
     }
 
@@ -276,19 +274,19 @@ const appCommands = {
         ],
         "prompt": [
             "[?prompt]",
-            "Prompt can be any string, and can include $config values or be $reset to reset"
+            "Prompt can be any string, and can include $config values or be $reset to reset."
         ],
         "set": [
             "[?setting] [?values...]",
             "Gets or sets the setting. Settings:",
-            "raw active           -- Gets the raw active setting",
-            "raw active [on/off]  -- Sets the raw active setting to on or off",
-            "raw mode             -- Gets the raw mode setting. Returns the value name",
-            "raw mode [value]     -- Sets the raw mode setting. Value must be a number",
+            "raw active           -- Gets the raw active setting.",
+            "raw active [on/off]  -- Sets the raw active setting to on or off.",
+            "raw mode             -- Gets the raw mode setting. Returns the value name.",
+            "raw mode [value]     -- Sets the raw mode setting. Value must be a number.",
             "    1 - Values Only (default)",
             "    2 - Schema Only",
             "    3 - Values and Schema",
-            "nesttables           -- Gets the nest tables prefix",
+            "nesttables           -- Gets the nest tables prefix.",
             "nesttables [prefix]  -- Sets the nest tables prefix. Useful for removing colliding column names.",
             "    Use $reset to reset to null.",
         ],
@@ -297,11 +295,11 @@ const appCommands = {
             "Creates an exact copy of the tables in SQL format. If no tables are specified, this will dump all tables in the database."
         ],
         "clear": [
-            "Clears the screen"
+            "Clears the screen."
         ],
         "help": [
             "[?command]",
-            "Prints this help message"
+            "Prints this help message, or the command's specific help message."
         ],
         "exit": [
             "Exits the program. (Calls SIGINT)"
@@ -517,14 +515,15 @@ const actionMap = {
 };
 function handleSQLModify(record, action) {
     action = action.toUpperCase();
-    action = actionMap[action] || action;  
-    // TODO: Change this to a map between action and human word
-    action = action.substring(0,1).toUpperCase() + action.substring(1).toLowerCase();
+    action = actionMap[action] || action;
+    action = action.substring(0, 1).toUpperCase() + action.substring(1).toLowerCase();
     let id = record.insertId;
     let rows = record.affectedRows;
-    let changed = record.changedRows;
+    let changed = record.changedRows ?? record.affectedRows;
 
-    return `${action} ${chalk.yellow(changed)} record${changed == 1 ? "" : "s"} (${rows} accessed).`;
+    let response = `${action} ${chalk.yellow(changed)} record${changed == 1 ? "" : "s"} (${rows} accessed).`;
+    if(id > 0) response += `\nAffected ID: ${chalk.yellow(id)}`;
+    return response;
 }
 
 function isValidCommand(c) {
