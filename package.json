@@ -1,6 +1,6 @@
 {
   "name": "sql-cli-repl",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "A small and simple MySQL CLI to connect to MySQL Database instances.",
   "main": "cli.js",
   "bin": {
@@ -34,6 +34,5 @@
     "requireg": "^0.2.2",
     "yargs": "^17.2.1"
   },
-  "optionalDependencies": {
-  }
+  "optionalDependencies": {}
 }
