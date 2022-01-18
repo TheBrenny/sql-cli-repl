@@ -8,6 +8,8 @@ This package lets you connect to [any SQL server](#drivers)* and execute queries
 
 ## Install
 
+> *This package will soon be renamed to `sqlcli-repl` in the NPM registry, so try that too!*
+
 ```console
 $ npm install -g sql-cli-repl
 ```
@@ -46,9 +48,14 @@ user@localhost> SELECT
 ... 3 AS `Three`,
 ... 4 AS `Four`
 ... ;
+|-------|------|
+| Three | Four |
+|-------|------|
+|     3 |    4 |
+|-------|------|
 ```
 
-Interact with the app/cli
+Interact with the `sqlcli` environment:
 ```plain
 user@localhost> /prompt sql
 sql> /clear
@@ -56,9 +63,9 @@ sql> /prompt $reset
 user@localhost> 
 ```
 
-Execute JS on results
+Execute JS on results:
 ```plain
-user@localhost> SELECT 1 AS `One`, 2 AS `Two`;
+user@localhost> SELECT 1 AS `One`, 2 AS `Two`;sh
 user@localhost> >$0
 [
   {
