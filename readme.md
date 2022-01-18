@@ -140,10 +140,10 @@ All available commands:
     - `raw active`           -- Gets the raw active setting
     - `raw active [on/off]`  -- Sets the raw active setting to on or off
     - `raw mode`             -- Gets the raw mode setting. Returns the value name
-    - `raw mode [value]`     -- Sets the raw mode setting. Value must be a number
-      - `1` - Values Only (default)
-      - `2` - Schema Only
-      - `3` - Values and Schema
+    - `raw mode [value]`     -- Sets the raw mode setting. Value must be a string
+      - `values` - Values Only (default)
+      - `schema` - Schema Only
+      - `all` - Values and Schema
     - `nesttables`           -- Gets the nest tables prefix
     - `nesttables [prefix]`  -- Sets the nest tables prefix. Useful for removing colliding column names.
       - Use `$reset` to reset to `null`.
@@ -181,6 +181,11 @@ There are two ways to contribute: to the project, or by developing a new driver.
 This tool works by using [`requireg`](https://www.npmjs.com/package/requireg) to require modules following the format of `sql-cli-driver-[protocol]` (eg: [`sql-cli-driver-mysql`](https://github.com/TheBrenny/sql-cli-driver-mysql), or [`sql-cli-driver-sqlite`](https://github.com/TheBrenny/sql-cli-driver-sqlite)). If you're contributing a driver, it must expose particular methods to allow this CLI REPL tool to interact with it.
 
 There is a [template GitHub repo](https://github.com/TheBrenny/sql-cli-driver) which has all the instructions and requirements that you need to ensure for driver.
+
+| Database |                       Driver                       |
+| :------: | :------------------------------------------------: |
+|  MySQL   | https://github.com/TheBrenny/sql-cli-driver-mysql  |
+|  SQLite  | https://github.com/TheBrenny/sql-cli-driver-sqlite |
 
 ## License
 

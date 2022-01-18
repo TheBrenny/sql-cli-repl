@@ -70,7 +70,6 @@ Object.defineProperties(vmContext, {
         get: () => Object.values(Object.assign({}, Array.from($$)[0]))
     },
 });
-const mysql = require("mysql2/promise");
 const chalk = require("chalk");
 const url = require("url");
 const rawModes = {
@@ -90,8 +89,9 @@ let config = {
     database: null,
     driver: null,
 };
+let driverPackage;
 let settings = {
-    prompt: "mysql",
+    prompt: "sql",
     raw: {
         active: false,
         mode: rawModes.values,
@@ -149,15 +149,16 @@ async function processArgs() {
     }
 
     try {
-        if(config.uri) {
-            let obj = url.parse(config.uri);
-            config.host = obj.hostname;
-            config.port = obj.port;
-            [config.user, config.password] = obj.auth.split(":");
-            config.database = obj.pathname.substr(1);
-        }
+        // if(config.uri) {
+        //     let obj = new URL(config.uri);
+        //     config.host = obj.hostname;
+        //     config.port = obj.port;
+        //     config.user = obj.username;
+        //     config.password = obj.password;
+        //     config.database = obj.pathname.substring(1);
+        // }
 
-        if(config.uri || config.host) await (connectToDB(config.uri || config));
+        await (connectToDB(config.uri || config));
     } catch(err) {
         logerr(err);
         db = null;
@@ -166,34 +167,35 @@ async function processArgs() {
 
 async function connectToDB(opts) {
     try {
-        let driver;
         if(typeof opts === "string") {
-            let obj = url.parse(opts);
+            let obj = new URL(opts);
             opts = {};
             opts.host = obj.hostname;
             opts.port = obj.port;
-            [opts.user, opts.password] = obj.auth.split(":");
-            opts.database = obj.pathname.substr(1);
-            driver = obj.protocol.substring(0, obj.protocol.length - 1);
-        } else {
-            driver = opts.driver;
+            opts.user = obj.username;
+            opts.password = obj.password;
+            opts.database = obj.pathname.substring(1);
+            opts.driver = obj.protocol.substring(0, obj.protocol.length - 1);
         }
-        // TODO: This is where `requirereg` is needed to make sure that we can accomodate the passed driver
-        // TODO: We need to make this actually work better. I need to create some form of documentation which
-        //       dictates how drivers need to be made!!
         Object.assign(config, opts);
-        switch(driver) {
+
+        switch(opts.driver) {
             case "mysql":
-                driver = mysql;
+                driverPackage = requireg("sqlclid-mysql");
+                break;
+            case "sqlite":
+                driverPackage = requireg("sqlclid-sqlite");
                 break;
             default:
-                throw {
-                    message: `Bad protocol must be '${driver}'.`,
-                    name: "BADURI",
-                    code: 11
-                };
+                driverPackage = requireg("sqlclid-" + opts.driver);
+                // throw {
+                //     message: `Bad driver parsed: '${opts.driver}'.`,
+                //     name: "BADURI",
+                //     code: 11
+                // };
+                break;
         }
-        return (db = await driver.createConnection(opts));
+        return (db = await driverPackage.createConnection(opts));
     } catch(err) {
         logerr(err);
         db = null;
@@ -220,10 +222,7 @@ async function handleCommand(data) {
         let suppress = data.endsWith("sh");
         if(suppress) data = data.substring(0, data.length - 2);
 
-        let r = await db.query({
-            sql: data,
-            nestTables: settings.nestTables
-        });
+        let r = await db.query(data, settings);
         $.splice(0, 0, r[0]);
         $.splice(settings.saveCount, $.length - settings.saveCount);
         $$.splice(0, 0, r[1]);
@@ -282,10 +281,10 @@ const appCommands = {
             "raw active           -- Gets the raw active setting.",
             "raw active [on/off]  -- Sets the raw active setting to on or off.",
             "raw mode             -- Gets the raw mode setting. Returns the value name.",
-            "raw mode [value]     -- Sets the raw mode setting. Value must be a number.",
-            "    1 - Values Only (default)",
-            "    2 - Schema Only",
-            "    3 - Values and Schema",
+            "raw mode [value]     -- Sets the raw mode setting. Value must be a string.",
+            "    values - Values Only (default)",
+            "    schema - Schema Only",
+            "    all    - Values and Schema",
             "nesttables           -- Gets the nest tables prefix.",
             "nesttables [prefix]  -- Sets the nest tables prefix. Useful for removing colliding column names.",
             "    Use $reset to reset to null.",
@@ -306,41 +305,22 @@ const appCommands = {
         ]
     },
     async dump(...tables) {
-        let exec = async (sql) => await db.query(sql);
-        tables = tables.length > 0 ? Array.from(tables) : (await exec("show tables"))[0].map(e => Object.values(e)[0]);
-
-        let dump = ["-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --", ""];
-        let miniDump = [];
-        let ret = {};
-
-        for(let t of tables) {
-            ret = (await exec("show create table " + t))[0][0];
-            dump.push("-- " + ret["Table"] + " --"); // jshint ignore:line
-            dump.push(ret["Create Table"]);
-            dump.push("");
-
-            ret = (await exec("select * from " + t));
-            if(ret[0][0] !== undefined) {
-                let qmark = Object.keys(ret[0][0]).map(() => "?").join(", ");
-                dump.push(mysql.format(`INSERT INTO ${t} (${qmark}) VALUES`, Object.keys(ret[0][0])));
-                miniDump = [];
-                for(let r of ret[0]) {
-                    miniDump.push("    " + mysql.format(`(${qmark})`, Object.values(r)));
-                }
-                dump.push(miniDump.join(",\n"));
-                dump[dump.length - 1] += ";";
-                dump.push("");
-            }
-        }
-
-        dump.push("", "-- Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl --");
+        let comment = driverPackage.COMMENT_MARKER ?? "--";
+        let dump = [
+            comment + " Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl " + comment,
+            "",
+            ...await db.dump(...tables),
+            "",
+            comment + " Dump created by SQLCLI by TheBrenny // https://github.com/thebrenny/sql-cli-repl " + comment,
+        ];
         return dump.join("\n");
     },
-    async connect(driver, user, pass, host) {
+    async connect(driver, user, password, host) {
         let opts = {
-            host,
+            driver,
             user,
-            password: pass
+            password,
+            host,
         };
         await connectToDB(opts);
         setDefaultPrompt();
